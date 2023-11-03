@@ -9,6 +9,8 @@ using System.Collections.Generic;
 using System.IO;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.TextManager.Interop;
+using EnvDTE;
+using Microsoft.VisualStudio.Shell;
 
 namespace Textplorer
 {
@@ -23,14 +25,9 @@ namespace Textplorer
         public searchControl()
         {
             this.InitializeComponent();
-           
-
 
             inputBox.TextChanged += InputBox_TextChanged;
-            myListView.SelectionChanged += MyListView_SelectionChanged; 
-
-
-
+            myListView.SelectionChanged += MyListView_SelectionChanged;
         }
 
         private void InputBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -56,6 +53,7 @@ namespace Textplorer
 
         private void MyListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
             Item selectedItem = myListView.SelectedItem as Item;
 
             if (selectedItem != null)
@@ -108,18 +106,19 @@ namespace Textplorer
 
             return activeView;
         }
+
         public static List<string> GetAllFilenamesInSolution()
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
             List<string> filenames = new List<string>();
             DTE dte = null;
             try
             {
-                dte = (DTE)System.Runtime.InteropServices.Marshal.GetActiveObject("VisualStudio.DTE"); // Adjust the version number as needed
+                dte = (EnvDTE.DTE)Package.GetGlobalService(typeof(DTE));
 
                 if (dte != null && dte.Solution != null)
                 {
                     Solution solution = dte.Solution;
-                    Console.WriteLine(solution.FullName);
 
                     foreach (Project project in solution.Projects)
                     {
@@ -131,10 +130,7 @@ namespace Textplorer
             catch (Exception ex)
             {
                 // Handle any exceptions that may occur during the process
-                Console.WriteLine($"Error: {ex.Message}");
-            }
-            finally {
-                System.Runtime.InteropServices.Marshal.ReleaseComObject(dte);
+                MessageBox.Show($"Error: {ex.Message}");
             }
 
             return filenames;
