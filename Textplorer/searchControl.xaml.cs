@@ -3,14 +3,10 @@ using System.Diagnostics.CodeAnalysis;
 using System.Windows;
 using System.Windows.Controls;
 using EnvDTE;
-using EnvDTE80;
 using System;
-using System.Collections.Generic;
 using System.IO;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.TextManager.Interop;
-using EnvDTE;
-using Microsoft.VisualStudio.Shell;
 
 namespace Textplorer
 {
@@ -26,9 +22,21 @@ namespace Textplorer
         {
             this.InitializeComponent();
 
+            //this.IsVisibleChanged += VisibleChangedHandler;
+            this.IsVisibleChanged += VisibleChangedHandler;
             inputBox.TextChanged += InputBox_TextChanged;
             myListView.SelectionChanged += MyListView_SelectionChanged;
         }
+
+        private void VisibleChangedHandler(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            if (this.IsVisible)
+            {
+                inputBox.SelectAll();
+                inputBox.Focus();
+            }
+        }
+
 
         private void InputBox_TextChanged(object sender, TextChangedEventArgs e)
         {
@@ -250,19 +258,6 @@ namespace Textplorer
             return results;
         }
 
-        /// <summary>
-        /// Handles click on the button by displaying a message box.
-        /// </summary>
-        /// <param name="sender">The event sender.</param>
-        /// <param name="e">The event args.</param>
-        [SuppressMessage("Microsoft.Globalization", "CA1300:SpecifyMessageBoxOptions", Justification = "Sample code")]
-        [SuppressMessage("StyleCop.CSharp.NamingRules", "SA1300:ElementMustBeginWithUpperCaseLetter", Justification = "Default event handler naming pattern")]
-        private void button1_Click(object sender, RoutedEventArgs e)
-        {
-            MessageBox.Show(
-                string.Format(System.Globalization.CultureInfo.CurrentUICulture, "Invoked '{0}'", this.ToString()),
-                "search");
-        }
         public class Item
         {
             public string FullPath { get; set; }
