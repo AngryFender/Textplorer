@@ -39,8 +39,10 @@ namespace Textplorer
                 myListView.ItemsSource = lists;
                 return;
             }
-            var nameLists = GetAllFilenamesInSolution();
-            var resultLists = SearchForStringInFiles(nameLists, inputBox.Text);
+
+            string rootPath;
+            var nameLists = GetAllFilenamesInSolution(out rootPath);
+            var resultLists = SearchForStringInFiles(nameLists, inputBox.Text, rootPath);
 
 
             foreach (var item in resultLists)
@@ -54,47 +56,50 @@ namespace Textplorer
         private void MyListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
-            Item selectedItem = myListView.SelectedItem as Item;
-
-            if (selectedItem != null)
+            try
             {
-                string path = selectedItem.Name;
-                int line = selectedItem.Line;
-                int position = selectedItem.Position;
+                Item selectedItem = myListView.SelectedItem as Item;
 
-                EnvDTE.DTE dte = (EnvDTE.DTE)Package.GetGlobalService(typeof(EnvDTE.DTE));
-                // Open the file in the Visual Studio editor
-                dte.ItemOperations.OpenFile(path, EnvDTE.Constants.vsViewKindPrimary);
-
-                // Get the text view for the active document
-                IVsTextView textView = GetActiveTextView();
-
-                Document activeDocument = dte.ActiveDocument;
-                TextSelection selection = activeDocument.Selection as TextSelection;
-
-                if (textView != null)
+                if (selectedItem != null)
                 {
-                    // Set the cursor to the specified line and column
-                    textView.SetCaretPos(line, position);
+                    string path = selectedItem.FullPath;
+                    int line = selectedItem.Line;
+                    int position = selectedItem.Position;
 
-                    string searchText = inputBox.Text;
+                    EnvDTE.DTE dte = (EnvDTE.DTE)Package.GetGlobalService(typeof(EnvDTE.DTE));
+                    // Open the file in the Visual Studio editor
+                    dte.ItemOperations.OpenFile(path, EnvDTE.Constants.vsViewKindPrimary);
 
-                    // Perform the search
-                    bool found = selection.FindText(searchText, (int)vsFindOptions.vsFindOptionsMatchCase);
+                    // Get the text view for the active document
+                    IVsTextView textView = GetActiveTextView();
 
-                    if (found)
+                    Document activeDocument = dte.ActiveDocument;
+                    TextSelection selection = activeDocument.Selection as TextSelection;
+
+                    if (textView != null)
                     {
-                        // Text was found; you can access selection.AnchorPoint and selection.ActivePoint
-                        // to get the positions of the found text
-                        int startLine = selection.AnchorPoint.Line;
-                        int startColumn = selection.AnchorPoint.LineCharOffset;
+                        // Set the cursor to the specified line and column
+                        textView.SetCaretPos(line, position);
 
-                        int endLine = selection.ActivePoint.Line;
-                        int endColumn = selection.ActivePoint.LineCharOffset;
+                        string searchText = inputBox.Text;
 
-                        // You can use these positions for further processing
+                        // Perform the search
+                        bool found = selection.FindText(searchText, (int)vsFindOptions.vsFindOptionsMatchCase);
+
+                        if (found)
+                        {
+                            int startLine = selection.AnchorPoint.Line;
+                            int startColumn = selection.AnchorPoint.LineCharOffset;
+
+                            int endLine = selection.ActivePoint.Line;
+                            int endColumn = selection.ActivePoint.LineCharOffset;
+                        }
                     }
                 }
+            }
+            catch(Exception ex)
+            {
+                MessageBox.Show($"Error: {ex.Message}");
             }
         }
         private IVsTextView GetActiveTextView()
@@ -107,11 +112,12 @@ namespace Textplorer
             return activeView;
         }
 
-        public static List<string> GetAllFilenamesInSolution()
+        public static List<string> GetAllFilenamesInSolution(out string rootPath)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             List<string> filenames = new List<string>();
             DTE dte = null;
+            string root = "";
             try
             {
                 dte = (EnvDTE.DTE)Package.GetGlobalService(typeof(DTE));
@@ -120,106 +126,115 @@ namespace Textplorer
                 {
                     Solution solution = dte.Solution;
 
+                    string solutionFilePath = dte.Solution.FullName;
+                    root = Path.GetDirectoryName(solutionFilePath);
+
                     foreach (Project project in solution.Projects)
                     {
                         // Recursively process projects
-                        TraverseProject(project, filenames);
+                        string name = project.FileName;
+                        if (!String.IsNullOrEmpty(name)) 
+                        { 
+                            TraverseProject(project, filenames);
+                        }
                     }
                 }
             }
             catch (Exception ex)
             {
                 // Handle any exceptions that may occur during the process
-                MessageBox.Show($"Error: {ex.Message}");
+                MessageBox.Show($"Error at Project level: {ex.Message}");
             }
 
+            rootPath = root;
             return filenames;
         }
 
-
-
         private static void TraverseProject(Project project, List<string> filenames)
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
             if (project == null)
             {
                 return;
             }
 
-            // Check if the project is a solution folder (a container for other projects)
-            if (project.Kind == EnvDTE.Constants.vsProjectKindSolutionItems)
+            foreach (ProjectItem item in project.ProjectItems)
             {
-                // Handle solution folders (if needed)
-                // You can recursively explore the projects within the solution folder here.
-                foreach (ProjectItem projectItem in project.ProjectItems)
+                if (item.Kind.Equals(Constants.vsProjectItemKindPhysicalFolder, StringComparison.OrdinalIgnoreCase)
+                    || item.Kind.Equals(Constants.vsProjectItemKindVirtualFolder, StringComparison.OrdinalIgnoreCase))
                 {
-                    // Recursively process project items in solution folders
-                    TraverseProjectItem(projectItem, filenames);
+                    TraverseProjectItem(item, filenames);
                 }
-            }
-            else
-            {
-                // This project is not a solution folder; process its files
-                ProcessProjectFiles(project, filenames);
+                else
+                {
+                    AddFileName(item, filenames);
+                }
             }
         }
 
         private static void TraverseProjectItem(ProjectItem projectItem, List<string> filenames)
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
             if (projectItem == null)
             {
                 return;
             }
 
-            // Recursively explore project items within solution folders
             foreach (ProjectItem item in projectItem.ProjectItems)
             {
-                TraverseProjectItem(item, filenames);
-            }
-        }
-
-        private static void ProcessProjectFiles(Project project, List<string> filenames)
-        {
-            if (project == null)
-            {
-                return;
-            }
-
-            // Add the filenames of project files to the list
-            foreach (ProjectItem item in project.ProjectItems)
-            {
-                // Get the full path to the project item (file)
-                string filePath = item.FileNames[0];
-                string fileName = item.Name;
-
-                if (!string.IsNullOrEmpty(filePath) && File.Exists(filePath))
+                //if folder, call yourself
+                if (item.Kind.Equals(Constants.vsProjectItemKindPhysicalFolder, StringComparison.OrdinalIgnoreCase)
+                    || item.Kind.Equals(Constants.vsProjectItemKindVirtualFolder, StringComparison.OrdinalIgnoreCase))
                 {
-                    filenames.Add(filePath);
+                    TraverseProjectItem(item, filenames);
+                }
+                else
+                {
+                    AddFileName(item, filenames);
                 }
             }
         }
 
-        public static List<Item> SearchForStringInFiles(List<string> filenames, string searchString)
+        private static void AddFileName(ProjectItem item, List<string> filenames)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            string filePath = item.FileNames[0];
+            if (!string.IsNullOrEmpty(filePath) && File.Exists(filePath))
+            {
+                string fileExtension = filePath.Substring(filePath.LastIndexOf('.'));
+                if (string.Equals(fileExtension, ".filters", StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                filenames.Add(filePath);
+            }
+        }
+
+
+        public static List<Item> SearchForStringInFiles(List<string> filenames, string searchString, string rootPath)
         {
             var results = new List<Item>();
 
-            foreach (string filename in filenames)
+            foreach (string fullPath in filenames)
             {
                 try
                 {
                     // Read all lines from the current file
-                    string[] lines = File.ReadAllLines(filename);
+                    string[] lines = File.ReadAllLines(fullPath);
 
                     int lineNumber = 0;
 
                     // Search for the string in each line
                     foreach (string line in lines)
                     {
-                        int index = line.IndexOf(searchString,StringComparison.OrdinalIgnoreCase);
+                        string relativePath = fullPath.Replace(rootPath, "");
 
+                        int index = line.IndexOf(searchString,StringComparison.OrdinalIgnoreCase);
                         if (index != -1)
                         { 
                             // If the line contains the search string, add it to the matchingLines list
-                            Item item = new Item(filename, line, lineNumber,index);
+                            Item item = new Item(fullPath,relativePath+" ("+(lineNumber+1).ToString()+")", line, lineNumber,index);
                             results.Add(item);
                         }
                         lineNumber++;
@@ -228,7 +243,7 @@ namespace Textplorer
                 catch (Exception ex)
                 {
                     // Handle any exceptions that may occur while processing the file
-                    Console.WriteLine($"Error processing file '{filename}': {ex.Message}");
+                    Console.WriteLine($"Error processing file '{fullPath}': {ex.Message}");
                 }
             }
 
@@ -250,13 +265,15 @@ namespace Textplorer
         }
         public class Item
         {
-            public string Name { get; set; }
+            public string FullPath { get; set; }
+            public string RelativePath { get; set; }
             public string Content { get; set; }
             public int Line { get; set; }
             public int Position { get; set; }
-            public Item(string Name, string Content, int Line, int position)
+            public Item(string FullPath, string RelativePath, string Content, int Line, int position)
             {
-                this.Name = Name;
+                this.FullPath = FullPath;
+                this.RelativePath = RelativePath;
                 this.Content = Content;
                 this.Line = Line;
                 this.Position = position;
