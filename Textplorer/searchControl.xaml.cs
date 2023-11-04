@@ -7,6 +7,7 @@ using System;
 using System.IO;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.TextManager.Interop;
+using System.Windows.Input;
 
 namespace Textplorer
 {
@@ -18,14 +19,21 @@ namespace Textplorer
         /// <summary>
         /// Initializes a new instance of the <see cref="searchControl"/> class.
         /// </summary>
+        private readonly List<Item> emptyList = new List<Item>();
+        private List<Item> matchList = new List<Item>();
+
         public searchControl()
         {
             this.InitializeComponent();
 
-            //this.IsVisibleChanged += VisibleChangedHandler;
             this.IsVisibleChanged += VisibleChangedHandler;
             inputBox.TextChanged += InputBox_TextChanged;
             myListView.SelectionChanged += MyListView_SelectionChanged;
+        }
+
+        private void KeyPressDownHandler(object sender, KeyEventArgs e)
+        {
+            // Check "Esc" key to hide this tool window
         }
 
         private void VisibleChangedHandler(object sender, DependencyPropertyChangedEventArgs e)
@@ -37,28 +45,147 @@ namespace Textplorer
             }
         }
 
-
         private void InputBox_TextChanged(object sender, TextChangedEventArgs e)
         {
-            List<Item> items = new List<Item>();
-            if (inputBox.Text.Length<2)
+            if (inputBox.Text.Length < 1)
             {
-                var lists = new List<Item>();
-                myListView.ItemsSource = lists;
+                myListView.ItemsSource = emptyList;
                 return;
             }
 
-            string rootPath;
-            var nameLists = GetAllFilenamesInSolution(out rootPath);
-            var resultLists = SearchForStringInFiles(nameLists, inputBox.Text, rootPath);
+            var matchList = GetAllMatchingInfo(inputBox.Text);
 
+            myListView.ItemsSource = matchList;
+        }
 
-            foreach (var item in resultLists)
+        private List<Item> GetAllMatchingInfo(string searchText)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            List<Item> matchList = new List<Item>();
+            DTE dte = null;
+            string root = "";
+            try
             {
-                items.Add(item);
+                dte = (EnvDTE.DTE)Package.GetGlobalService(typeof(DTE));
+
+                if (dte != null && dte.Solution != null)
+                {
+                    Solution solution = dte.Solution;
+
+                    string solutionFilePath = dte.Solution.FullName;
+                    root = Path.GetDirectoryName(solutionFilePath);
+
+                    foreach (Project project in solution.Projects)
+                    {
+                        // Recursively process projects
+                        string name = project.FileName;
+                        if (!String.IsNullOrEmpty(name)) 
+                        { 
+                            SearchInProject(project, searchText,root, matchList);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Handle any exceptions that may occur during the process
+                MessageBox.Show($"Error at Project level: {ex.Message}");
+            }
+                return matchList;
+        }
+
+        private void SearchInProject(Project project, string searchText, string root, List<Item> matchList)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            if (project == null)
+            {
+                return;
             }
 
-            myListView.ItemsSource = items;
+            foreach (ProjectItem item in project.ProjectItems)
+            {
+                if (item.Kind.Equals(Constants.vsProjectItemKindPhysicalFolder, StringComparison.OrdinalIgnoreCase)
+                    || item.Kind.Equals(Constants.vsProjectItemKindVirtualFolder, StringComparison.OrdinalIgnoreCase))
+                {
+                    SearchInFolder(item, searchText,root, matchList);
+                }
+                else
+                {
+                    SearchInFile(item, searchText,root, matchList);
+                }
+            }
+        }
+
+
+        private void SearchInFolder(ProjectItem projectItem, string searchText, string root, List<Item> matchList)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            if (projectItem == null)
+            {
+                return;
+            }
+
+            foreach (ProjectItem item in projectItem.ProjectItems)
+            {
+                //if folder, call yourself
+                if (item.Kind.Equals(Constants.vsProjectItemKindPhysicalFolder, StringComparison.OrdinalIgnoreCase)
+                    || item.Kind.Equals(Constants.vsProjectItemKindVirtualFolder, StringComparison.OrdinalIgnoreCase))
+                {
+                    SearchInFolder(item, searchText,root, matchList);
+                }
+                else
+                {
+                    SearchInFile(item, searchText, root, matchList);
+                }
+            }
+        }
+
+        private void SearchInFile(ProjectItem item, string searchText,string root, List<Item> matchList)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            string filePath = item.FileNames[0];
+            if (!string.IsNullOrEmpty(filePath) && File.Exists(filePath))
+            {
+                string fileExtension = filePath.Substring(filePath.LastIndexOf('.'));
+                if (string.Equals(fileExtension, ".filters", StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                try
+                {
+                    // Read all lines from the current file
+                    string fileContent = File.ReadAllText(filePath);
+                    if (!fileContent.Contains(searchText))
+                    {
+                        return;
+                    }
+
+                    string[] lines = File.ReadAllLines(filePath);
+                    int lineNumber = 0;
+
+                    // Search for the string in each line
+                    foreach (string line in lines)
+                    {
+                        string relativePath = filePath.Replace(root, "");
+
+                        int index = line.IndexOf(searchText,StringComparison.OrdinalIgnoreCase);
+                        if (index != -1)
+                        { 
+                            // If the line contains the search string, add it to the matchingLines list
+                            Item listItem = new Item(filePath,relativePath+" ("+(lineNumber+1).ToString()+")", line, lineNumber,index);
+                            matchList.Add(listItem);
+                        }
+                        lineNumber++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Handle any exceptions that may occur while processing the file
+                    Console.WriteLine($"Error processing file '{filePath}': {ex.Message}");
+                }
+            }
         }
 
         private void MyListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -82,7 +209,7 @@ namespace Textplorer
                     IVsTextView textView = GetActiveTextView();
 
                     Document activeDocument = dte.ActiveDocument;
-                    TextSelection selection = activeDocument.Selection as TextSelection;
+                    EnvDTE.TextSelection selection = activeDocument.Selection as EnvDTE.TextSelection;
 
                     if (textView != null)
                     {
@@ -175,7 +302,7 @@ namespace Textplorer
                 }
                 else
                 {
-                    AddFileName(item, filenames);
+                    ProcessFileName(item, filenames);
                 }
             }
         }
@@ -198,12 +325,12 @@ namespace Textplorer
                 }
                 else
                 {
-                    AddFileName(item, filenames);
+                    ProcessFileName(item, filenames);
                 }
             }
         }
 
-        private static void AddFileName(ProjectItem item, List<string> filenames)
+        private static void ProcessFileName(ProjectItem item, List<string> filenames)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             string filePath = item.FileNames[0];
@@ -219,7 +346,6 @@ namespace Textplorer
             }
         }
 
-
         public static List<Item> SearchForStringInFiles(List<string> filenames, string searchString, string rootPath)
         {
             var results = new List<Item>();
@@ -229,8 +355,13 @@ namespace Textplorer
                 try
                 {
                     // Read all lines from the current file
-                    string[] lines = File.ReadAllLines(fullPath);
+                    string fileContent = File.ReadAllText(fullPath);
+                    if (!fileContent.Contains(searchString))
+                    {
+                        continue;
+                    }
 
+                    string[] lines = File.ReadAllLines(fullPath);
                     int lineNumber = 0;
 
                     // Search for the string in each line
