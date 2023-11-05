@@ -8,6 +8,8 @@ using System.IO;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.TextManager.Interop;
 using System.Windows.Input;
+using System.Threading.Tasks;
+using Microsoft.VisualStudio.RpcContracts.Utilities;
 
 namespace Textplorer
 {
@@ -21,19 +23,15 @@ namespace Textplorer
         /// </summary>
         private readonly List<Item> emptyList = new List<Item>();
         private List<Item> matchList = new List<Item>();
+        private const int upperBoundLineNumber = 25;
 
         public searchControl()
         {
             this.InitializeComponent();
-
+            
             this.IsVisibleChanged += VisibleChangedHandler;
             inputBox.TextChanged += InputBox_TextChanged;
             myListView.SelectionChanged += MyListView_SelectionChanged;
-        }
-
-        private void KeyPressDownHandler(object sender, KeyEventArgs e)
-        {
-            // Check "Esc" key to hide this tool window
         }
 
         private void VisibleChangedHandler(object sender, DependencyPropertyChangedEventArgs e)
@@ -157,13 +155,14 @@ namespace Textplorer
                 {
                     // Read all lines from the current file
                     string fileContent = File.ReadAllText(filePath);
-                    if (!fileContent.Contains(searchText))
+                    if (!fileContent.ToLower().Contains(searchText.ToLower()))
                     {
                         return;
                     }
 
                     string[] lines = File.ReadAllLines(filePath);
                     int lineNumber = 0;
+                    int maxLine = lines.Length;
 
                     // Search for the string in each line
                     foreach (string line in lines)
@@ -174,7 +173,7 @@ namespace Textplorer
                         if (index != -1)
                         { 
                             // If the line contains the search string, add it to the matchingLines list
-                            Item listItem = new Item(filePath,relativePath+" ("+(lineNumber+1).ToString()+")", line, lineNumber,index);
+                            Item listItem = new Item(filePath,relativePath+" ("+(lineNumber+1).ToString()+")", line, lineNumber, maxLine, index, line.Length);
                             matchList.Add(listItem);
                         }
                         lineNumber++;
@@ -188,7 +187,8 @@ namespace Textplorer
             }
         }
 
-        private void MyListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+
+        private  void MyListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             try
@@ -199,7 +199,9 @@ namespace Textplorer
                 {
                     string path = selectedItem.FullPath;
                     int line = selectedItem.Line;
+                    int maxLine = selectedItem.MaxLine;
                     int position = selectedItem.Position;
+                    int endPosition = selectedItem.EndPosition;
 
                     EnvDTE.DTE dte = (EnvDTE.DTE)Package.GetGlobalService(typeof(EnvDTE.DTE));
                     // Open the file in the Visual Studio editor
@@ -215,20 +217,14 @@ namespace Textplorer
                     {
                         // Set the cursor to the specified line and column
                         textView.SetCaretPos(line, position);
-
-                        string searchText = inputBox.Text;
+                        TextSpan ts;
+                        ProcesTextSpan(line, maxLine, out ts);
 
                         // Perform the search
-                        bool found = selection.FindText(searchText, (int)vsFindOptions.vsFindOptionsMatchCase);
+                        string searchText = inputBox.Text;
+                        bool found = selection.FindText(searchText);
 
-                        if (found)
-                        {
-                            int startLine = selection.AnchorPoint.Line;
-                            int startColumn = selection.AnchorPoint.LineCharOffset;
-
-                            int endLine = selection.ActivePoint.Line;
-                            int endColumn = selection.ActivePoint.LineCharOffset;
-                        }
+                        textView.EnsureSpanVisible(ts);
                     }
                 }
             }
@@ -237,6 +233,32 @@ namespace Textplorer
                 MessageBox.Show($"Error: {ex.Message}");
             }
         }
+
+        private void ProcesTextSpan(int line, int maxLine,out TextSpan ts)
+        {
+            ts = new TextSpan();
+
+            int start = line - upperBoundLineNumber;
+            if(start < 0)
+            {
+                ts.iStartLine = 0;
+            }
+            else
+            {
+                ts.iStartLine = start;
+            }
+            
+            int end = line + upperBoundLineNumber;
+            if(end > maxLine)
+            {
+                ts.iEndLine = maxLine;
+            }
+            else
+            {
+                ts.iEndLine = end;
+            }
+        }
+
         private IVsTextView GetActiveTextView()
         {
             IVsTextManager textManager = Package.GetGlobalService(typeof(SVsTextManager)) as IVsTextManager;
@@ -365,6 +387,7 @@ namespace Textplorer
                     int lineNumber = 0;
 
                     // Search for the string in each line
+                    int maxLine = lines.Length;
                     foreach (string line in lines)
                     {
                         string relativePath = fullPath.Replace(rootPath, "");
@@ -373,7 +396,7 @@ namespace Textplorer
                         if (index != -1)
                         { 
                             // If the line contains the search string, add it to the matchingLines list
-                            Item item = new Item(fullPath,relativePath+" ("+(lineNumber+1).ToString()+")", line, lineNumber,index);
+                            Item item = new Item(fullPath,relativePath+" ("+(lineNumber+1).ToString()+")", line, maxLine, lineNumber,index, line.Length);
                             results.Add(item);
                         }
                         lineNumber++;
@@ -395,14 +418,18 @@ namespace Textplorer
             public string RelativePath { get; set; }
             public string Content { get; set; }
             public int Line { get; set; }
+            public int MaxLine { get; set; }
             public int Position { get; set; }
-            public Item(string FullPath, string RelativePath, string Content, int Line, int position)
+            public int EndPosition { get; set; }
+            public Item(string FullPath, string RelativePath, string Content, int Line, int maxLine, int position, int endPosition)
             {
                 this.FullPath = FullPath;
                 this.RelativePath = RelativePath;
                 this.Content = Content;
                 this.Line = Line;
+                this.MaxLine = maxLine;
                 this.Position = position;
+                this.EndPosition = endPosition;
             }
         }
     }

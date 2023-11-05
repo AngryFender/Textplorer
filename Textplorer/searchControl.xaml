@@ -36,6 +36,16 @@
                     </GridViewColumn>
                 </GridView>
             </ListView.View>
+            <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem">
+                    <Setter Property="Height" Value="19" />
+                    <Setter Property="FontFamily" Value="Source Code Pro Medium"/>
+                    <Setter Property="FontSize" Value="11"/>
+                    <Setter Property="Margin" Value="0,-4,0,0" />
+                    <Setter Property="Padding" Value="0,-4,0,0" />
+                    <Setter Property="VerticalAlignment" Value="Top" />
+                </Style>
+            </ListView.ItemContainerStyle>
         </ListView>
     </Grid>
 </UserControl>
