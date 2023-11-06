@@ -30,6 +30,7 @@ namespace Textplorer
             // we are not calling Dispose on this object. This is because ToolWindowPane calls Dispose on
             // the object returned by the Content property.
             var control = new searchControl();
+            control.MatchEventHandler += ShowTitle;
             this.Content = control;
         }
 
@@ -42,11 +43,28 @@ namespace Textplorer
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             IVsWindowFrame windowFrame = (IVsWindowFrame)this.Frame;
-            
+
             if (windowFrame != null)
             {
                 // Close the ToolWindowPane
                 windowFrame.Hide();
+            }
+        }
+
+        private void ShowTitle(object sender, MatchEventArgs e)
+        {
+            if (null == e)
+            {
+                return;
+            }
+
+            if (0 == e.Matches)
+            {
+                this.Caption = "Textplorer";
+            }
+            else
+            {
+                this.Caption = $"Textplorer ({e.Matches})";
             }
         }
     }

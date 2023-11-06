@@ -1,15 +1,11 @@
-﻿using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
-using System.Windows;
-using System.Windows.Controls;
-using EnvDTE;
-using System;
-using System.IO;
+﻿using EnvDTE;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.TextManager.Interop;
-using System.Windows.Input;
-using System.Threading.Tasks;
-using Microsoft.VisualStudio.RpcContracts.Utilities;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Windows;
+using System.Windows.Controls;
 
 namespace Textplorer
 {
@@ -34,6 +30,13 @@ namespace Textplorer
             myListView.SelectionChanged += MyListView_SelectionChanged;
         }
 
+        public event EventHandler<MatchEventArgs> MatchEventHandler;
+
+        public void RaiseMatchEvent(int matches)
+        {
+            MatchEventHandler?.Invoke(this, new MatchEventArgs(matches));
+        }
+
         private void VisibleChangedHandler(object sender, DependencyPropertyChangedEventArgs e)
         {
             if (this.IsVisible)
@@ -48,12 +51,14 @@ namespace Textplorer
             if (inputBox.Text.Length < 1)
             {
                 myListView.ItemsSource = emptyList;
+                RaiseMatchEvent(0);
                 return;
             }
 
             var matchList = GetAllMatchingInfo(inputBox.Text);
 
             myListView.ItemsSource = matchList;
+            RaiseMatchEvent(matchList.Count);
         }
 
         private List<Item> GetAllMatchingInfo(string searchText)
@@ -432,5 +437,16 @@ namespace Textplorer
                 this.EndPosition = endPosition;
             }
         }
+
+    }
+}
+
+public class MatchEventArgs : EventArgs
+{
+    public int Matches { get; }
+
+    public MatchEventArgs(int matches)
+    {
+        Matches = matches;
     }
 }
