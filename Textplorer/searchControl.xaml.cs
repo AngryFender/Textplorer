@@ -18,8 +18,8 @@ namespace Textplorer
         /// Initializes a new instance of the <see cref="searchControl"/> class.
         /// </summary>
         private readonly List<Item> emptyList = new List<Item>();
-        private List<Item> matchList = new List<Item>();
         private const int upperBoundLineNumber = 25;
+        private readonly string[] banList = { ".filters", ".png", ".jpg", ".vsixmanifest" };
 
         public searchControl()
         {
@@ -144,14 +144,13 @@ namespace Textplorer
             }
         }
 
-        private void SearchInFile(ProjectItem item, string searchText,string root, List<Item> matchList)
+        private void SearchInFile(ProjectItem item, string searchText, string root, List<Item> matchList)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             string filePath = item.FileNames[0];
             if (!string.IsNullOrEmpty(filePath) && File.Exists(filePath))
             {
-                string fileExtension = filePath.Substring(filePath.LastIndexOf('.'));
-                if (string.Equals(fileExtension, ".filters", StringComparison.OrdinalIgnoreCase))
+                if (CheckExtensionBanList(filePath))
                 {
                     return;
                 }
@@ -190,6 +189,19 @@ namespace Textplorer
                     Console.WriteLine($"Error processing file '{filePath}': {ex.Message}");
                 }
             }
+        }
+
+        private bool CheckExtensionBanList(string file)
+        {
+            string ext = file.Substring(file.LastIndexOf("."));
+            foreach (var word in banList)
+            {
+                if (ext.Equals(word))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
 
