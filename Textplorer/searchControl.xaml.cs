@@ -156,6 +156,13 @@ namespace Textplorer
                     return;
                 }
 
+                //Check for WPF files
+                string fileExtension = filePath.Substring(filePath.LastIndexOf('.'));
+                if (string.Equals(fileExtension, ".xaml", StringComparison.OrdinalIgnoreCase))
+                {
+                    SearchInFolder(item, searchText, projectName, matchList);
+                }
+
                 try
                 {
                     // Read all lines from the current file
