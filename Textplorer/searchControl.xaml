@@ -18,19 +18,17 @@
         </Grid.RowDefinitions>
         <TextBox x:Name="inputBox" Text="" MaxHeight="50" Grid.Row="1"/>
         <ListView x:Name="myListView" ScrollViewer.HorizontalScrollBarVisibility="Hidden" >
+            <ListView.Resources>
+                <Style TargetType="GridViewColumnHeader">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </Style>
+            </ListView.Resources>
             <ListView.View>
                 <GridView>
-                    <GridViewColumn Header="Files" Width="300">
+                    <GridViewColumn Header="Files" Width="Auto">
                         <GridViewColumn.CellTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding RelativePath}" TextTrimming="CharacterEllipsis" TextAlignment="Left"/>
-                            </DataTemplate>
-                        </GridViewColumn.CellTemplate>
-                    </GridViewColumn>
-                    <GridViewColumn Header="Match" Width="700">
-                        <GridViewColumn.CellTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding Content}" />
+                                <TextBlock Text="{Binding Content}"/>
                             </DataTemplate>
                         </GridViewColumn.CellTemplate>
                     </GridViewColumn>
