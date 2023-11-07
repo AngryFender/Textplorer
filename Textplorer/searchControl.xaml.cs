@@ -24,8 +24,9 @@ namespace Textplorer
         public searchControl()
         {
             this.InitializeComponent();
-            
-            this.IsVisibleChanged += VisibleChangedHandler;
+
+            //this.IsVisibleChanged += VisibleChangedHandler;
+            inputBox.IsKeyboardFocusedChanged += VisibleChangedHandler;
             inputBox.TextChanged += InputBox_TextChanged;
             myListView.SelectionChanged += MyListView_SelectionChanged;
         }
@@ -39,7 +40,7 @@ namespace Textplorer
 
         private void VisibleChangedHandler(object sender, DependencyPropertyChangedEventArgs e)
         {
-            if (this.IsVisible)
+            if (this.IsVisible && inputBox.IsKeyboardFocused)
             {
                 inputBox.SelectAll();
                 inputBox.Focus();
