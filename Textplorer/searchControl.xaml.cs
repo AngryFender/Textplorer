@@ -230,6 +230,7 @@ namespace Textplorer
                     EnvDTE.DTE dte = (EnvDTE.DTE)Package.GetGlobalService(typeof(EnvDTE.DTE));
                     // Open the file in the Visual Studio editor
                     var window = dte.ItemOperations.OpenFile(path, EnvDTE.Constants.vsViewKindCode);
+                    window.Activate();
 
                     // Get the text view for the active document
                     IVsTextView textView = GetActiveTextView();
