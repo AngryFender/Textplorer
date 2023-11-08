@@ -16,11 +16,12 @@
             <RowDefinition Height="Auto" />
             <!-- TextBox takes a fixed height -->
         </Grid.RowDefinitions>
-        <TextBox x:Name="inputBox" Text="" MaxHeight="50" Grid.Row="1"/>
-        <ListView x:Name="myListView" ScrollViewer.HorizontalScrollBarVisibility="Hidden" >
+        <TextBox x:Name="inputBox" MaxHeight="50" Grid.Row="1" Background="#FF3D3D3D" Foreground="#FFA0A0A0"/>
+        <ListView x:Name="myListView" ScrollViewer.HorizontalScrollBarVisibility="Hidden" Background="#FF282E3A" Foreground="#FF646464" BorderBrush="#FF374357" >
             <ListView.Resources>
                 <Style TargetType="GridViewColumnHeader">
                     <Setter Property="Visibility" Value="Collapsed" />
+                    <Setter Property="FontFamily" Value="Source Code Pro Bold"/>
                 </Style>
             </ListView.Resources>
             <ListView.View>
@@ -37,7 +38,7 @@
             <ListView.ItemContainerStyle>
                 <Style TargetType="ListViewItem">
                     <Setter Property="Height" Value="19" />
-                    <Setter Property="FontFamily" Value="Source Code Pro Medium"/>
+                    <Setter Property="FontFamily" Value="Source Code Pro Bold"/>
                     <Setter Property="FontSize" Value="11"/>
                     <Setter Property="Margin" Value="0,-4,0,0" />
                     <Setter Property="Padding" Value="0,-4,0,0" />
