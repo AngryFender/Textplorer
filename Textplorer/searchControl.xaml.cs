@@ -25,7 +25,6 @@ namespace Textplorer
         {
             this.InitializeComponent();
 
-            //this.IsVisibleChanged += VisibleChangedHandler;
             inputBox.IsKeyboardFocusedChanged += VisibleChangedHandler;
             inputBox.TextChanged += InputBox_TextChanged;
             myListView.SelectionChanged += MyListView_SelectionChanged;
@@ -67,7 +66,8 @@ namespace Textplorer
             ThreadHelper.ThrowIfNotOnUIThread();
             List<Item> matchList = new List<Item>();
             DTE dte = null;
-            string projectName = "";
+            string projectName = string.Empty;
+            string projectPath = string.Empty;
             try
             {
                 dte = (EnvDTE.DTE)Package.GetGlobalService(typeof(DTE));
@@ -81,9 +81,9 @@ namespace Textplorer
                     foreach (Project project in solution.Projects)
                     {
                         // Recursively process projects
-                        string path = project.FileName;
+                        projectPath = project.FileName;
                         projectName = project.Name;
-                        if (!String.IsNullOrEmpty(path))
+                        if (!String.IsNullOrEmpty(projectPath))
                         {
                             SearchInProject(project, searchText, projectName, matchList);
                         }
@@ -174,7 +174,6 @@ namespace Textplorer
 
                     string[] lines = File.ReadAllLines(filePath);
                     int lineNumber = 0;
-                    int maxLine = lines.Length;
                     string relativePath = filePath.Substring(filePath.LastIndexOf("\\"+projectName+"\\")).TrimStart('\\');
                     string content = string.Empty;
 
@@ -187,7 +186,7 @@ namespace Textplorer
                             // If the line contains the search string, add it to the matchingLines list
                             content = relativePath + " (" + (lineNumber + 1).ToString() + ")         " + line.TrimStart();
 
-                            Item listItem = new Item(filePath, content, lineNumber, maxLine, index, line.Length);
+                            Item listItem = new Item(filePath, content, lineNumber, index);
                             matchList.Add(listItem);
                         }
                         lineNumber++;
@@ -226,13 +225,11 @@ namespace Textplorer
                 {
                     string path = selectedItem.FullPath;
                     int line = selectedItem.Line;
-                    int maxLine = selectedItem.MaxLine;
                     int position = selectedItem.Position;
-                    int endPosition = selectedItem.EndPosition;
 
                     EnvDTE.DTE dte = (EnvDTE.DTE)Package.GetGlobalService(typeof(EnvDTE.DTE));
                     // Open the file in the Visual Studio editor
-                    dte.ItemOperations.OpenFile(path, EnvDTE.Constants.vsViewKindCode);
+                    var window = dte.ItemOperations.OpenFile(path, EnvDTE.Constants.vsViewKindCode);
 
                     // Get the text view for the active document
                     IVsTextView textView = GetActiveTextView();
@@ -244,45 +241,19 @@ namespace Textplorer
                     {
                         // Set the cursor to the specified line and column
                         textView.SetCaretPos(line, position);
-                        TextSpan ts;
-                        ProcesTextSpan(line, maxLine, out ts);
 
                         // Perform the search
                         string searchText = inputBox.Text;
                         bool found = selection.FindText(searchText);
 
-                        textView.EnsureSpanVisible(ts);
+                        textView.CenterLines(line, 1);
+                        window.SetFocus();
                     }
                 }
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"Error: {ex.Message}");
-            }
-        }
-
-        private void ProcesTextSpan(int line, int maxLine, out TextSpan ts)
-        {
-            ts = new TextSpan();
-
-            int start = line - upperBoundLineNumber;
-            if (start < 0)
-            {
-                ts.iStartLine = 0;
-            }
-            else
-            {
-                ts.iStartLine = start;
-            }
-
-            int end = line + upperBoundLineNumber;
-            if (end > maxLine)
-            {
-                ts.iEndLine = maxLine;
-            }
-            else
-            {
-                ts.iEndLine = end;
             }
         }
 
@@ -301,20 +272,15 @@ namespace Textplorer
             public string FullPath { get; set; }
             public string Content { get; set; }
             public int Line { get; set; }
-            public int MaxLine { get; set; }
             public int Position { get; set; }
-            public int EndPosition { get; set; }
-            public Item(string FullPath, string Content, int Line, int maxLine, int position, int endPosition)
+            public Item(string FullPath, string Content, int Line, int position)
             {
                 this.FullPath = FullPath;
                 this.Content = Content;
                 this.Line = Line;
-                this.MaxLine = maxLine;
                 this.Position = position;
-                this.EndPosition = endPosition;
             }
         }
-
     }
 }
 
