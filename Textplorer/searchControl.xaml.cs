@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 
 namespace Textplorer
 {
@@ -26,8 +27,26 @@ namespace Textplorer
             this.InitializeComponent();
 
             inputBox.IsKeyboardFocusedChanged += VisibleChangedHandler;
+            inputBox.KeyUp += KeyUpHandler;
             inputBox.TextChanged += InputBox_TextChanged;
             myListView.SelectionChanged += MyListView_SelectionChanged;
+        }
+
+        private void KeyUpHandler(object sender, KeyEventArgs e)
+        {
+            if(e.Key == Key.Enter)
+            {
+                if(0 < myListView.Items.Count)
+                {
+                    myListView.SelectedIndex = 0;
+                    ListViewItem item = myListView.SelectedItem as ListViewItem;
+                            
+                    if(null != item)
+                    {
+                        item.Focus();
+                    }
+                }
+            }
         }
 
         public event EventHandler<MatchEventArgs> MatchEventHandler;
