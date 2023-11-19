@@ -39,11 +39,10 @@ namespace Textplorer
                 if(0 < myListView.Items.Count)
                 {
                     myListView.SelectedIndex = 0;
-                    ListViewItem item = myListView.SelectedItem as ListViewItem;
-                            
-                    if(null != item)
+                    ListViewItem listViewItem = (ListViewItem)myListView.ItemContainerGenerator.ContainerFromIndex(0);
+                    if(null != listViewItem)
                     {
-                        item.Focus();
+                        listViewItem.Focus();
                     }
                 }
             }
