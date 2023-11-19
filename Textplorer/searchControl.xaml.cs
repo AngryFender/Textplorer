@@ -4,9 +4,12 @@ using Microsoft.VisualStudio.TextManager.Interop;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Threading;
 
 namespace Textplorer
 {
@@ -18,9 +21,10 @@ namespace Textplorer
         /// <summary>
         /// Initializes a new instance of the <see cref="searchControl"/> class.
         /// </summary>
-        private readonly List<Item> emptyList = new List<Item>();
+        private readonly List<ListViewItem> emptyList = new List<ListViewItem>();
         private const int upperBoundLineNumber = 25;
         private readonly string[] banList = { ".filters", ".png", ".jpg", ".vsixmanifest" };
+        private CancellationTokenSource cts = new CancellationTokenSource();
 
         public searchControl()
         {
@@ -39,12 +43,17 @@ namespace Textplorer
                 if(0 < myListView.Items.Count)
                 {
                     myListView.SelectedIndex = 0;
-                    ListViewItem item = myListView.SelectedItem as ListViewItem;
-                            
-                    if(null != item)
+                    foreach( ListViewItem item in myListView.SelectedItems)
                     {
-                        item.Focus();
+                        if(null != item)
+                        {
+                            item.Focus();
+                        }
                     }
+
+                    //ListViewItem item = myListView.SelectedItem as ListViewItem;
+                            
+                    ///myListView.Focus();
                 }
             }
         }
@@ -65,25 +74,118 @@ namespace Textplorer
             }
         }
 
-        private void InputBox_TextChanged(object sender, TextChangedEventArgs e)
+        private async void InputBox_TextChanged(object sender, TextChangedEventArgs e)
         {
+            cts.Cancel();
+            cts = new CancellationTokenSource();
+            var token = cts.Token;
+
             if (inputBox.Text.Length < 1)
             {
                 myListView.ItemsSource = emptyList;
                 RaiseMatchEvent(0);
                 return;
             }
+            string searchText = inputBox.Text;
+            var filesList = GetAllMatchFiles(searchText);
 
-            var matchList = GetAllMatchingInfo(inputBox.Text);
 
-            myListView.ItemsSource = matchList;
+            List<Item> matchList = await Task.Run(()=>GetAllMatchInfo(filesList, searchText,token));
+            List<ListViewItem> viewItems = await ConvertToListViewItems(matchList,token);
+
+            myListView.ItemsSource = viewItems;
             RaiseMatchEvent(matchList.Count);
         }
 
-        private List<Item> GetAllMatchingInfo(string searchText)
+        private async Task<List<ListViewItem>> ConvertToListViewItems(List<Item> matchList, CancellationToken token)
+        {
+            List<ListViewItem> list = new List<ListViewItem>();
+
+            const int batchSize = 20;
+            int count = 0;
+            foreach(Item item in matchList)
+            {
+                if (token.IsCancellationRequested)
+                {
+                    return list;
+                }
+
+                if(count >= batchSize)
+                {
+                    count = 0;
+                    Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        myListView.ItemsSource = list;
+                    },DispatcherPriority.Background);
+                   await Task.Delay(10);
+                }
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                        ListViewItem listViewItem = new ListViewItem();
+                        listViewItem.Content = item.Content;
+                        listViewItem.Tag = item;
+                        list.Add(listViewItem);
+                },DispatcherPriority.Background);
+                count++;
+            }
+
+            return list;
+        }
+
+        private List<Item> GetAllMatchInfo(List<(string,string)> filesList, string searchText, CancellationToken token)
+        {
+            List<Item> list = new List<Item>();
+            foreach(var filePath in filesList)
+            {
+                if (!token.IsCancellationRequested)
+                {
+                    SearchInLines(filePath, list, searchText);
+                }
+            }
+            return list;
+        }
+
+        private void SearchInLines((string,string) filePath, List<Item> list, string searchText)
+        {
+             try
+                {
+                    // Read all lines from the current file
+                    string fileContent = File.ReadAllText(filePath.Item1);
+
+                    string[] lines = File.ReadAllLines(filePath.Item1);
+                    int lineNumber = 0;
+                    string relativePath = filePath.Item1.Substring(filePath.Item1.LastIndexOf("\\"+filePath.Item2+"\\")).TrimStart('\\');
+                    string content = string.Empty;
+
+                    // Search for the string in each line
+                    foreach (string line in lines)
+                    {
+                        int index = line.IndexOf(searchText, StringComparison.OrdinalIgnoreCase);
+                        if (index != -1)
+                        {
+                            // If the line contains the search string, add it to the matchingLines list
+                            content = relativePath + " (" + (lineNumber + 1).ToString() + ")         " + line.TrimStart();
+
+                            Item listItem = new Item(filePath.Item1, content, lineNumber, index);
+                           // ListViewItem listViewItem = new ListViewItem();
+                            //listViewItem.Content = content;
+                            //listViewItem.Tag = listItem;
+                            list.Add(listItem);
+                        }
+                        lineNumber++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Handle any exceptions that may occur while processing the file
+                    Console.WriteLine($"Error processing file '{filePath}': {ex.Message}");
+                }
+        }
+
+        private List<(string,string)> GetAllMatchFiles(string searchText)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
-            List<Item> matchList = new List<Item>();
+            List<(string,string)> matchList = new List<(string,string)>();
             DTE dte = null;
             string projectName = string.Empty;
             string projectPath = string.Empty;
@@ -117,7 +219,7 @@ namespace Textplorer
             return matchList;
         }
 
-        private void SearchInProject(Project project, string searchText, string projectName, List<Item> matchList)
+        private void SearchInProject(Project project, string searchText, string projectName, List<(string,string)> matchList)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
@@ -141,7 +243,7 @@ namespace Textplorer
         }
 
 
-        private void SearchInFolder(ProjectItem projectItem, string searchText, string projectName, List<Item> matchList)
+        private void SearchInFolder(ProjectItem projectItem, string searchText, string projectName, List<(string,string)> matchList)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             if (projectItem == null)
@@ -164,7 +266,7 @@ namespace Textplorer
             }
         }
 
-        private void SearchInFile(ProjectItem item, string searchText, string projectName, List<Item> matchList)
+        private void SearchInFile(ProjectItem item, string searchText, string projectName, List<(string,string)> matchList)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             string filePath = item.FileNames[0];
@@ -191,26 +293,9 @@ namespace Textplorer
                         return;
                     }
 
-                    string[] lines = File.ReadAllLines(filePath);
-                    int lineNumber = 0;
-                    string relativePath = filePath.Substring(filePath.LastIndexOf("\\"+projectName+"\\")).TrimStart('\\');
-                    string content = string.Empty;
+                    matchList.Add((filePath, projectName));
 
-                    // Search for the string in each line
-                    foreach (string line in lines)
-                    {
-                        int index = line.IndexOf(searchText, StringComparison.OrdinalIgnoreCase);
-                        if (index != -1)
-                        {
-                            // If the line contains the search string, add it to the matchingLines list
-                            content = relativePath + " (" + (lineNumber + 1).ToString() + ")         " + line.TrimStart();
-
-                            Item listItem = new Item(filePath, content, lineNumber, index);
-                            matchList.Add(listItem);
-                        }
-                        lineNumber++;
-                    }
-                }
+            }
                 catch (Exception ex)
                 {
                     // Handle any exceptions that may occur while processing the file
@@ -238,7 +323,17 @@ namespace Textplorer
             ThreadHelper.ThrowIfNotOnUIThread();
             try
             {
-                Item selectedItem = myListView.SelectedItem as Item;
+                ListViewItem selectedListViewItem = myListView.SelectedItem as ListViewItem;
+                if(null == selectedListViewItem)
+                {
+                    return;
+                }
+
+                Item selectedItem = selectedListViewItem.Tag as Item;
+                if(null == selectedItem)
+                {
+                    return;
+                }
 
                 if (selectedItem != null)
                 {
@@ -312,4 +407,4 @@ public class MatchEventArgs : EventArgs
     {
         Matches = matches;
     }
-}
+} 
