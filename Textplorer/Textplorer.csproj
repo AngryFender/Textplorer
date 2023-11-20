@@ -51,6 +51,7 @@
     <Compile Include="searchControl.xaml.cs">
       <DependentUpon>searchControl.xaml</DependentUpon>
     </Compile>
+    <Compile Include="StringToXamlConverter.cs" />
     <Compile Include="TextplorerPackage.cs" />
     <Compile Include="TextplorerPackage1.cs">
       <AutoGen>True</AutoGen>

@@ -5,11 +5,14 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Markup;
+using System.Xml;
 
 namespace Textplorer
 {
@@ -25,6 +28,7 @@ namespace Textplorer
         private const int upperBoundLineNumber = 25;
         private readonly string[] banList = { ".filters", ".png", ".jpg", ".vsixmanifest" };
         private CancellationTokenSource cts = new CancellationTokenSource();
+        public static StringToXamlConverter xamlConverter = new StringToXamlConverter();
 
         public searchControl()
         {
@@ -122,6 +126,10 @@ namespace Textplorer
                     relativePath=  string.Join(Path.DirectorySeparatorChar.ToString(), lastThreeFoldersWithFile);
                 }
                 string content = string.Empty;
+                string editedLine = string.Empty;
+                string wrappedInput = string.Empty;
+                string escapedXml = string.Empty;
+                string withTags = string.Empty;
 
                 // Search for the string in each line
                 foreach (string line in lines)
@@ -134,8 +142,17 @@ namespace Textplorer
                     if (index != -1)
                     {
                         // If the line contains the search string, add it to the matchingLines list
-                        content = relativePath + " (" + (lineNumber + 1).ToString() + ")         " + line.TrimStart();
-                        Item listItem = new Item(filePaths.Item1, content, lineNumber, index);
+                        editedLine = line.Insert(index+searchText.Length, "💀");
+                        editedLine = editedLine.Insert(index, "😊");
+                        content = relativePath + " (" + (lineNumber + 1).ToString() + ")         " + editedLine.TrimStart();
+
+                        escapedXml = SecurityElement.Escape(content);
+                        withTags = escapedXml.Replace("😊", "<Run Style=\"{DynamicResource highlight}\">");
+                        withTags = withTags.Replace("💀", "</Run>");
+
+                        wrappedInput = string.Format("<TextBlock xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" TextWrapping=\"Wrap\">{0}</TextBlock>", withTags);
+
+                        Item listItem = new Item(filePaths.Item1, wrappedInput, lineNumber, index);
                         list.Add(listItem);
                     }
                     lineNumber++;
