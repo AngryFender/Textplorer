@@ -26,7 +26,7 @@ namespace Textplorer
         /// </summary>
         private readonly List<Item> emptyList = new List<Item>();
         private const int upperBoundLineNumber = 25;
-        private readonly string[] banList = { ".filters", ".png", ".jpg", ".vsixmanifest" };
+        private readonly string[] banList = { ".filters", ".png", ".jpg", ".vsixmanifest",".dll" };
         private CancellationTokenSource cts = new CancellationTokenSource();
         public static StringToXamlConverter xamlConverter = new StringToXamlConverter();
 
@@ -142,9 +142,15 @@ namespace Textplorer
                     if (index != -1)
                     {
                         // If the line contains the search string, add it to the matchingLines list
-                        editedLine = line.Insert(index+searchText.Length, "💀");
-                        editedLine = editedLine.Insert(index, "😊");
-                        content = relativePath + " (" + (lineNumber + 1).ToString() + ")         " + editedLine.TrimStart();
+                        content = relativePath
+                            + "("
+                            + (lineNumber + 1).ToString()
+                            + ")"
+                            + line.Substring(index)
+                            + "😊"
+                            + searchText
+                            + "💀"
+                            + line.Substring(index+searchText.Length);
 
                         escapedXml = SecurityElement.Escape(content);
                         withTags = escapedXml.Replace("😊", "<Run Style=\"{DynamicResource highlight}\">");
