@@ -3,9 +3,11 @@ using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.TextManager.Interop;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Security;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -29,6 +31,10 @@ namespace Textplorer
         private readonly string[] banList = { ".filters", ".png", ".jpg", ".vsixmanifest",".dll" };
         private CancellationTokenSource cts = new CancellationTokenSource();
         public static StringToXamlConverter xamlConverter = new StringToXamlConverter();
+        private const string BraceStart = "&#40;";
+        private const string BraceEnd = "&#41;🔎";
+        private const string RunStart = "<Run Style=\"{DynamicResource highlight}\">";
+        private const string RunEnd = "</Run>";
 
         public searchControl()
         {
@@ -74,23 +80,30 @@ namespace Textplorer
 
         private async void InputBox_TextChanged(object sender, TextChangedEventArgs e)
         {
-            cts.Cancel();
-            cts = new CancellationTokenSource();
-            CancellationToken token = cts.Token;
-
-            if (inputBox.Text.Length < 1)
+            try
             {
-                myListView.ItemsSource = emptyList;
-                RaiseMatchEvent(0);
-                return;
+                cts.Cancel();
+                cts = new CancellationTokenSource();
+                CancellationToken token = cts.Token;
+
+                if (inputBox.Text.Length < 1)
+                {
+                    myListView.ItemsSource = emptyList;
+                    RaiseMatchEvent(0);
+                    return;
+                }
+
+                string searchText = inputBox.Text;
+                var matchFiles = GetAllSolutionFiles(searchText, token);
+                List<Item> matchList = await Task.Run(() => GetAllMatchingItems(matchFiles, searchText, token));
+
+                myListView.ItemsSource = matchList;
+                RaiseMatchEvent(matchList.Count);
             }
-
-            string searchText = inputBox.Text;
-            var matchFiles = GetAllMatchingFiles(searchText, token);
-            List<Item> matchList = await Task.Run(()=>GetAllMatchingItems(matchFiles, searchText, token));
-
-            myListView.ItemsSource = matchList;
-            RaiseMatchEvent(matchList.Count);
+            catch(Exception ex)
+            {
+                MessageBox.Show(ex.Message);
+            }
         }
 
         private List<Item> GetAllMatchingItems(List<(string, string)> matchFiles, string searchText, CancellationToken token)
@@ -111,27 +124,33 @@ namespace Textplorer
         {
             try
             {
+                //skip if file doesnt contain the search text
+                string fileContent = File.ReadAllText(filePaths.Item1);
+                if (!fileContent.ToLower().Contains(searchText.ToLower()))
+                {
+                    return;
+                }
+
                 // Read all lines from the current file
                 string[] lines = File.ReadAllLines(filePaths.Item1);
                 int lineNumber = 0;
                 string relativePath = filePaths.Item1;
+
+                //if the path of the file includes the project name
                 if (filePaths.Item1.Contains(filePaths.Item2))
                 {
                      relativePath = filePaths.Item1.Substring(filePaths.Item1.LastIndexOf("\\" + filePaths.Item2 + "\\")).TrimStart('\\');
                 }
                 else
                 {
+                    //if the path of the file doesn't include the project name just take last 3 folders in the path
                     var pathParts = filePaths.Item1.Split(Path.DirectorySeparatorChar);
                     var lastThreeFoldersWithFile = pathParts.Skip(Math.Max(0, pathParts.Length - 4)).ToArray();
                     relativePath=  string.Join(Path.DirectorySeparatorChar.ToString(), lastThreeFoldersWithFile);
                 }
-                string content = string.Empty;
-                string editedLine = string.Empty;
-                string wrappedInput = string.Empty;
-                string escapedXml = string.Empty;
-                string withTags = string.Empty;
 
                 // Search for the string in each line
+                string xmlContent = string.Empty;
                 foreach (string line in lines)
                 {
                     if (token.IsCancellationRequested)
@@ -141,24 +160,20 @@ namespace Textplorer
                     int index = line.IndexOf(searchText, StringComparison.OrdinalIgnoreCase);
                     if (index != -1)
                     {
-                        // If the line contains the search string, add it to the matchingLines list
-                        content = relativePath
-                            + "("
-                            + (lineNumber + 1).ToString()
-                            + ")"
-                            + line.Substring(index)
-                            + "😊"
-                            + searchText
-                            + "💀"
-                            + line.Substring(index+searchText.Length);
+                        StringBuilder sb = new StringBuilder();
+                        sb.Append(SecurityElement.Escape(relativePath))
+                          .Append(BraceStart)
+                          .Append((lineNumber + 1).ToString())
+                          .Append(BraceEnd)
+                          .Append(SecurityElement.Escape(line.Substring(0, index)))
+                          .Append(RunStart)
+                          .Append(SecurityElement.Escape(searchText))
+                          .Append(RunEnd)
+                          .Append(SecurityElement.Escape(line.Substring(index + searchText.Length)));
 
-                        escapedXml = SecurityElement.Escape(content);
-                        withTags = escapedXml.Replace("😊", "<Run Style=\"{DynamicResource highlight}\">");
-                        withTags = withTags.Replace("💀", "</Run>");
+                        xmlContent = string.Format("<TextBlock xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" TextWrapping=\"Wrap\">{0}</TextBlock>", sb.ToString());
 
-                        wrappedInput = string.Format("<TextBlock xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" TextWrapping=\"Wrap\">{0}</TextBlock>", withTags);
-
-                        Item listItem = new Item(filePaths.Item1, wrappedInput, lineNumber, index);
+                        Item listItem = new Item(filePaths.Item1, xmlContent, lineNumber, index);
                         list.Add(listItem);
                     }
                     lineNumber++;
@@ -171,7 +186,7 @@ namespace Textplorer
             }
         }
 
-        private List<(string,string)> GetAllMatchingFiles(string searchText, CancellationToken token)
+        private List<(string,string)> GetAllSolutionFiles(string searchText, CancellationToken token)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             List<(string,string)> matchList = new List<(string,string)>();
@@ -277,20 +292,7 @@ namespace Textplorer
                     SearchInFolder(item, searchText, projectName, matchList, token);
                 }
 
-                try
-                {
-                    // Read all lines from the current file
-                    string fileContent = File.ReadAllText(filePath);
-                    if (fileContent.ToLower().Contains(searchText.ToLower()))
-                    {
-                        matchList.Add((filePath, projectName));
-                    }
-                }
-                catch (Exception ex)
-                {
-                    // Handle any exceptions that may occur while processing the file
-                    Console.WriteLine($"Error processing file '{filePath}': {ex.Message}");
-                }
+                matchList.Add((filePath, projectName));
             }
         }
 
@@ -306,7 +308,6 @@ namespace Textplorer
             }
             return false;
         }
-
 
         private void MyListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
