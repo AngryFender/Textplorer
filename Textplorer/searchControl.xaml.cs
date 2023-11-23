@@ -95,10 +95,22 @@ namespace Textplorer
 
                 string searchText = inputBox.Text;
                 var matchFiles = GetAllSolutionFiles(searchText, token);
-                List<Item> matchList = await Task.Run(() => GetAllMatchingItems(matchFiles, searchText, token));
 
-                myListView.ItemsSource = matchList;
-                RaiseMatchEvent(matchList.Count);
+                List<Item> tinyList = new List<Item>();
+                var tinyTask = Task.Run(() => GetAllTinyMatchingItems(tinyList, matchFiles, searchText, token))
+                    .ContinueWith(t =>
+                    {
+                        Dispatcher.Invoke(() => SetListViewSource(tinyList));
+                    });
+                
+                List<Item> matchList = new List<Item>();
+                var bigTask = Task.Run(() => GetAllMatchingItems(matchList, matchFiles, searchText, token))
+                    .ContinueWith(t => 
+                    {
+                        Dispatcher.Invoke(() => SetListViewSource(matchList,true));
+                    });
+
+                await Task.WhenAll(tinyTask,bigTask);
             }
             catch(Exception ex)
             {
@@ -106,18 +118,110 @@ namespace Textplorer
             }
         }
 
-        private List<Item> GetAllMatchingItems(List<(string, string)> matchFiles, string searchText, CancellationToken token)
+        private void SetListViewSource(List<Item> list, bool showCount = false)
         {
-            List<Item> list = new List<Item>();
+            if(inputBox.Text.Length < 1)
+            {
+                myListView.ItemsSource = emptyList;
+                RaiseMatchEvent(0);
+            }
+            else
+            {
+                myListView.ItemsSource= list;
+                if (showCount)
+                {
+                    RaiseMatchEvent(list.Count);
+                }
+            }
+        }
+
+        private void GetAllTinyMatchingItems(List<Item> tinyList, List<(string, string)> matchFiles, string searchText, CancellationToken token)
+        {
             foreach(var filePaths in matchFiles)
             {
                 if (token.IsCancellationRequested)
                 {
-                    return emptyList;
+                    return;
                 }
-                SearchInLines(filePaths, searchText, list, token);
+                SearchInLinesTinyResults(filePaths, searchText, tinyList, token);
             }
-            return list;
+        }
+        private void SearchInLinesTinyResults((string, string) filePaths, string searchText, List<Item> TinyList, CancellationToken token)
+        {
+            try
+            {
+                //skip if file doesnt contain the search text
+                string fileContent = File.ReadAllText(filePaths.Item1);
+                if (!fileContent.ToLower().Contains(searchText.ToLower()))
+                {
+                    return;
+                }
+
+                // Read all lines from the current file
+                string[] lines = File.ReadAllLines(filePaths.Item1);
+                int lineNumber = 0;
+                string relativePath = filePaths.Item1;
+
+                //if the path of the file includes the project name
+                if (filePaths.Item1.Contains(filePaths.Item2))
+                {
+                     relativePath = filePaths.Item1.Substring(filePaths.Item1.LastIndexOf("\\" + filePaths.Item2 + "\\")).TrimStart('\\');
+                }
+                else
+                {
+                    //if the path of the file doesn't include the project name just take last 3 folders in the path
+                    var pathParts = filePaths.Item1.Split(Path.DirectorySeparatorChar);
+                    var lastThreeFoldersWithFile = pathParts.Skip(Math.Max(0, pathParts.Length - 4)).ToArray();
+                    relativePath=  string.Join(Path.DirectorySeparatorChar.ToString(), lastThreeFoldersWithFile);
+                }
+
+                // Search for the string in each line
+                string xmlContent = string.Empty;
+                foreach (string line in lines)
+                {
+                    if (token.IsCancellationRequested || lineNumber >60)
+                    {
+                        return;
+                    }
+                    int index = line.IndexOf(searchText, StringComparison.OrdinalIgnoreCase);
+                    if (index != -1)
+                    {
+                        StringBuilder sb = new StringBuilder();
+                        sb.Append(SecurityElement.Escape(relativePath))
+                          .Append(BraceStart)
+                          .Append((lineNumber + 1).ToString())
+                          .Append(BraceEnd)
+                          .Append(SecurityElement.Escape(line.Substring(0, index)))
+                          .Append(RunStart)
+                          .Append(SecurityElement.Escape(searchText))
+                          .Append(RunEnd)
+                          .Append(SecurityElement.Escape(line.Substring(index + searchText.Length)));
+
+                        xmlContent = string.Format("<TextBlock xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" TextWrapping=\"Wrap\">{0}</TextBlock>", sb.ToString());
+
+                        Item listItem = new Item(filePaths.Item1, xmlContent, lineNumber, index);
+                        TinyList.Add(listItem);
+                    }
+                    lineNumber++;
+                }
+            }
+            catch (Exception ex)
+            {
+                // Handle any exceptions that may occur while processing the file
+                Console.WriteLine($"Error processing file '{filePaths.Item1}': {ex.Message}");
+            }
+        }
+
+        private void GetAllMatchingItems(List<Item> matchList, List<(string, string)> matchFiles, string searchText, CancellationToken token)
+        {
+            foreach(var filePaths in matchFiles)
+            {
+                if (token.IsCancellationRequested)
+                {
+                    return;
+                }
+                SearchInLines(filePaths, searchText, matchList, token);
+            }
         }
 
         private void SearchInLines((string, string) filePaths, string searchText, List<Item> list, CancellationToken token)
