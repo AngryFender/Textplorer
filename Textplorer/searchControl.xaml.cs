@@ -27,7 +27,6 @@ namespace Textplorer
         /// Initializes a new instance of the <see cref="searchControl"/> class.
         /// </summary>
         private readonly List<Item> emptyList = new List<Item>();
-        private const int upperBoundLineNumber = 25;
         private readonly string[] banList = { ".filters", ".png", ".jpg", ".vsixmanifest",".dll" };
         private CancellationTokenSource cts = new CancellationTokenSource();
         public static StringToXamlConverter xamlConverter = new StringToXamlConverter();
@@ -71,8 +70,18 @@ namespace Textplorer
 
         private void VisibleChangedHandler(object sender, DependencyPropertyChangedEventArgs e)
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
             if (this.IsVisible && inputBox.IsKeyboardFocused)
             {
+                EnvDTE.DTE dte = (EnvDTE.DTE)Package.GetGlobalService(typeof(EnvDTE.DTE));
+                IVsTextView textView = GetActiveTextView();
+                string selectedWord;
+                textView.GetSelectedText(out selectedWord);
+                if(!String.IsNullOrEmpty(selectedWord))
+                {
+                    inputBox.Text = selectedWord;
+                }
+
                 inputBox.SelectAll();
                 inputBox.Focus();
             }
