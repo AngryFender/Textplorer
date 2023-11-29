@@ -103,7 +103,8 @@ namespace Textplorer
                 }
 
                 string searchText = inputBox.Text;
-                var matchFiles = GetAllSolutionFiles(searchText, token);
+                List<string> projectList = new List<string>();
+                var matchFiles = GetAllSolutionFiles(projectList, searchText, token);
 
                 List<Item> tinyList = new List<Item>();
                 var tinyTask = Task.Run(() => GetAllTinyMatchingItems(tinyList, matchFiles, searchText, token))
@@ -119,11 +120,21 @@ namespace Textplorer
                         Dispatcher.Invoke(() => SetListViewSource(matchList,true));
                     });
 
+                updateCheckboxes(projectList);
                 await Task.WhenAll(tinyTask,bigTask);
             }
             catch(Exception ex)
             {
                 MessageBox.Show(ex.Message);
+            }
+        }
+
+        private void updateCheckboxes(List<string> projectList)
+        {
+            foreach(string name in projectList)
+            {
+                CheckBox checkBox = new CheckBox();
+                checkBox.Name = name;
             }
         }
 
@@ -299,7 +310,7 @@ namespace Textplorer
             }
         }
 
-        private List<(string,string)> GetAllSolutionFiles(string searchText, CancellationToken token)
+        private List<(string,string)> GetAllSolutionFiles(List<string> projectList, string searchText, CancellationToken token)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             List<(string,string)> matchList = new List<(string,string)>();
@@ -324,6 +335,7 @@ namespace Textplorer
                         if (!String.IsNullOrEmpty(projectPath) && (!token.IsCancellationRequested))
                         {
                             SearchInProject(project, searchText, projectName, matchList,token);
+                            projectList.Add(projectName);
                         }
                     }
                 }
