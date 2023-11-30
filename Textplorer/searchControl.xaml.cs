@@ -14,6 +14,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Markup;
+using System.Windows.Media;
 using System.Xml;
 
 namespace Textplorer
@@ -133,8 +134,15 @@ namespace Textplorer
         {
             foreach(string name in projectList)
             {
-                CheckBox checkBox = new CheckBox();
-                checkBox.Name = name;
+
+                CheckBox checkBox = new CheckBox
+                {
+                    Content = name,
+                    Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF3D3D3D")),
+                    Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFA0A0A0"))
+                };
+                checkBoxPanel.Children.Clear();
+                checkBoxPanel.Children.Add(checkBox);
             }
         }
 
