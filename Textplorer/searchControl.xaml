@@ -22,10 +22,9 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <StackPanel x:Name="checkBoxPanel" Grid.Row="1" Orientation="Horizontal">
-            <CheckBox Content="this is new"/>
-        </StackPanel>
         <TextBox x:Name="inputBox" MaxHeight="50" Grid.Row="2" Background="#FF3D3D3D" Foreground="#FFA0A0A0"/>
+        <StackPanel x:Name="checkBoxPanel" Grid.Row="1" Orientation="Horizontal">
+        </StackPanel>
         <ListView x:Name="myListView" ScrollViewer.HorizontalScrollBarVisibility="Hidden" Background="#FF282E3A" Foreground="#FF646464" BorderBrush="#FF374357" >
             <ListView.Resources>
                 <Style TargetType="GridViewColumnHeader">
