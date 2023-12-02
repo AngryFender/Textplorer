@@ -29,6 +29,7 @@ namespace Textplorer
         /// </summary>
         private readonly List<Item> emptyList = new List<Item>();
         private readonly string[] banList = { ".filters", ".png", ".jpg", ".vsixmanifest",".dll" };
+        private List<(string, Project)> projectList = new List<(string, Project)>();
         private CancellationTokenSource cts = new CancellationTokenSource();
         public static StringToXamlConverter xamlConverter = new StringToXamlConverter();
         private const string BraceStart = "&#40;";
@@ -72,8 +73,12 @@ namespace Textplorer
         private void VisibleChangedHandler(object sender, DependencyPropertyChangedEventArgs e)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
+            List<string> projectNames = GetAllProjectnames(projectList);
+            UpdateCheckboxes(projectNames);
+
             if (this.IsVisible && inputBox.IsKeyboardFocused)
             {
+
                 EnvDTE.DTE dte = (EnvDTE.DTE)Package.GetGlobalService(typeof(EnvDTE.DTE));
                 IVsTextView textView = GetActiveTextView();
                 string selectedWord;
@@ -86,6 +91,36 @@ namespace Textplorer
                 inputBox.SelectAll();
                 inputBox.Focus();
             }
+        }
+
+        private List<string> GetAllProjectnames(List<(string,Project)> projectList)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            List<string> projectNames = new List<string>();
+            try
+            {
+                DTE dte = (EnvDTE.DTE)Package.GetGlobalService(typeof(DTE));
+                if (dte != null && dte.Solution != null)
+                {
+                    string solutionFilePath = dte.Solution.FullName;
+                    foreach (Project project in dte.Solution.Projects)
+                    {
+                        string projectPath = project.FileName;
+                        string projectName = project.Name;
+                        if (!String.IsNullOrEmpty(projectPath)) 
+                        {
+                            projectList.Add((projectName,project));
+                            projectNames.Add(projectName);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Handle any exceptions that may occur during the process
+                MessageBox.Show($"Error at Project level: {ex.Message}");
+            }
+            return projectNames;
         }
 
         private async void InputBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -104,8 +139,7 @@ namespace Textplorer
                 }
 
                 string searchText = inputBox.Text;
-                List<string> projectList = new List<string>();
-                var matchFiles = GetAllSolutionFiles(projectList, searchText, token);
+                var matchFiles = GetAllSolutionFiles(searchText, token);
 
                 List<Item> tinyList = new List<Item>();
                 var tinyTask = Task.Run(() => GetAllTinyMatchingItems(tinyList, matchFiles, searchText, token))
@@ -121,7 +155,6 @@ namespace Textplorer
                         Dispatcher.Invoke(() => SetListViewSource(matchList,true));
                     });
 
-                updateCheckboxes(projectList);
                 await Task.WhenAll(tinyTask,bigTask);
             }
             catch(Exception ex)
@@ -130,20 +163,46 @@ namespace Textplorer
             }
         }
 
-        private void updateCheckboxes(List<string> projectList)
+        private void UpdateCheckboxes(List<string> projectList)
         {
-            foreach(string name in projectList)
-            {
+            List<string> remainList = new List<string>(projectList);
 
+            foreach (var checkBox in checkBoxPanel.Children.OfType<CheckBox>().ToList())
+            {
+                if (!remainList.Remove(checkBox.Content.ToString()))
+                {
+                    checkBox.Checked -= CheckBoxChecked;
+                    checkBox.Unchecked -= CheckBoxUnchecked;
+                    checkBoxPanel.Children.Remove(checkBox);
+                }
+            }
+
+            foreach(string name in remainList)
+            {
                 CheckBox checkBox = new CheckBox
                 {
                     Content = name,
                     Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF3D3D3D")),
                     Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFA0A0A0"))
                 };
-                checkBoxPanel.Children.Clear();
+                checkBox.Checked += CheckBoxChecked;
+                checkBox.Unchecked += CheckBoxUnchecked;
                 checkBoxPanel.Children.Add(checkBox);
             }
+        }
+
+        private void CheckBoxUnchecked(object sender, RoutedEventArgs e)
+        {
+            CheckBox checker = (CheckBox)sender;
+            string projectName = checker.Content.ToString();
+            inputBox.Text = projectName + "is unchecked";
+        }
+
+        private void CheckBoxChecked(object sender, RoutedEventArgs e)
+        {
+            CheckBox checker = (CheckBox)sender;
+            string projectName = checker.Content.ToString();
+            inputBox.Text = projectName + "is checked";
         }
 
         private void SetListViewSource(List<Item> list, bool showCount = false)
@@ -318,33 +377,20 @@ namespace Textplorer
             }
         }
 
-        private List<(string,string)> GetAllSolutionFiles(List<string> projectList, string searchText, CancellationToken token)
+        private List<(string,string)> GetAllSolutionFiles( string searchText, CancellationToken token)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             List<(string,string)> matchList = new List<(string,string)>();
-            DTE dte = null;
-            string projectName = string.Empty;
-            string projectPath = string.Empty;
             try
             {
-                dte = (EnvDTE.DTE)Package.GetGlobalService(typeof(DTE));
-
-                if (dte != null && dte.Solution != null)
+            foreach (var projectPair in projectList)
+            {
+                // Recursively process projects
+                string projectPath = projectPair.Item2.FileName;
+                string projectName = projectPair.Item2.Name;
+                if (!String.IsNullOrEmpty(projectPath) && (!token.IsCancellationRequested))
                 {
-                    Solution solution = dte.Solution;
-
-                    string solutionFilePath = dte.Solution.FullName;
-
-                    foreach (Project project in solution.Projects)
-                    {
-                        // Recursively process projects
-                        projectPath = project.FileName;
-                        projectName = project.Name;
-                        if (!String.IsNullOrEmpty(projectPath) && (!token.IsCancellationRequested))
-                        {
-                            SearchInProject(project, searchText, projectName, matchList,token);
-                            projectList.Add(projectName);
-                        }
+                        SearchInProject(projectPair.Item2, searchText, projectName, matchList,token);
                     }
                 }
             }
