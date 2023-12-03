@@ -3,6 +3,7 @@ using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.TextManager.Interop;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -12,6 +13,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Markup;
 using System.Windows.Media;
@@ -29,9 +31,10 @@ namespace Textplorer
         /// </summary>
         private readonly List<Item> emptyList = new List<Item>();
         private readonly string[] banList = { ".filters", ".png", ".jpg", ".vsixmanifest",".dll" };
-        private List<(string, Project)> projectList = new List<(string, Project)>();
+        private List<Project> projectList = new List<Project>();
         private CancellationTokenSource cts = new CancellationTokenSource();
         public static StringToXamlConverter xamlConverter = new StringToXamlConverter();
+        private CheckBox selectAllCheckBox;
         private const string BraceStart = "&#40;";
         private const string BraceEnd = "&#41;🔎";
         private const string RunStart = "<Run Style=\"{DynamicResource highlight}\">";
@@ -78,7 +81,6 @@ namespace Textplorer
 
             if (this.IsVisible && inputBox.IsKeyboardFocused)
             {
-
                 EnvDTE.DTE dte = (EnvDTE.DTE)Package.GetGlobalService(typeof(EnvDTE.DTE));
                 IVsTextView textView = GetActiveTextView();
                 string selectedWord;
@@ -93,10 +95,11 @@ namespace Textplorer
             }
         }
 
-        private List<string> GetAllProjectnames(List<(string,Project)> projectList)
+        private List<string> GetAllProjectnames(List<Project> projectList)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             List<string> projectNames = new List<string>();
+            projectList.Clear();
             try
             {
                 DTE dte = (EnvDTE.DTE)Package.GetGlobalService(typeof(DTE));
@@ -109,7 +112,7 @@ namespace Textplorer
                         string projectName = project.Name;
                         if (!String.IsNullOrEmpty(projectPath)) 
                         {
-                            projectList.Add((projectName,project));
+                            projectList.Add(project);
                             projectNames.Add(projectName);
                         }
                     }
@@ -156,6 +159,7 @@ namespace Textplorer
                     });
 
                 await Task.WhenAll(tinyTask,bigTask);
+                FilterListView();
             }
             catch(Exception ex)
             {
@@ -166,13 +170,14 @@ namespace Textplorer
         private void UpdateCheckboxes(List<string> projectList)
         {
             List<string> remainList = new List<string>(projectList);
+            remainList.Insert(0,"All");
 
             foreach (var checkBox in checkBoxPanel.Children.OfType<CheckBox>().ToList())
             {
                 if (!remainList.Remove(checkBox.Content.ToString()))
                 {
-                    checkBox.Checked -= CheckBoxChecked;
-                    checkBox.Unchecked -= CheckBoxUnchecked;
+                    checkBox.Checked -= CheckBoxClicked;
+                    checkBox.Unchecked -= CheckBoxClicked;
                     checkBoxPanel.Children.Remove(checkBox);
                 }
             }
@@ -183,26 +188,109 @@ namespace Textplorer
                 {
                     Content = name,
                     Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF3D3D3D")),
-                    Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFA0A0A0"))
+                    Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFA0A0A0")),
+                    IsChecked = true,
+                    Padding = new Thickness(0, 0, 10, 0) 
                 };
-                checkBox.Checked += CheckBoxChecked;
-                checkBox.Unchecked += CheckBoxUnchecked;
+                checkBox.Checked += CheckBoxClicked;
+                checkBox.Unchecked += CheckBoxClicked;
                 checkBoxPanel.Children.Add(checkBox);
+
+                if(name == "All")
+                {
+                    selectAllCheckBox = checkBox;
+                }
             }
         }
 
-        private void CheckBoxUnchecked(object sender, RoutedEventArgs e)
+        private void CheckBoxClicked(object sender, RoutedEventArgs e)
         {
-            CheckBox checker = (CheckBox)sender;
-            string projectName = checker.Content.ToString();
-            inputBox.Text = projectName + "is unchecked";
+            bool senderSelectAllCheckBox = false;
+            if(selectAllCheckBox == sender as CheckBox)
+            {
+                senderSelectAllCheckBox = true;
+            }
+
+            FilterListView(senderSelectAllCheckBox);
         }
 
-        private void CheckBoxChecked(object sender, RoutedEventArgs e)
+        private void FilterListView(bool senderSelectAllCheckBox = false)
         {
-            CheckBox checker = (CheckBox)sender;
-            string projectName = checker.Content.ToString();
-            inputBox.Text = projectName + "is checked";
+            bool isAnyCheckBoxUnchecked = false;
+            List<string> projectNames = new List<string>();
+
+            if ((bool)selectAllCheckBox.IsChecked && senderSelectAllCheckBox)
+            {
+                foreach (var checkBox in checkBoxPanel.Children.OfType<CheckBox>().ToList())
+                {
+                    checkBox.Checked -= CheckBoxClicked;
+                    checkBox.IsChecked = true;
+                    checkBox.Checked += CheckBoxClicked;
+                    projectNames.Add(checkBox.Content.ToString());
+                }
+            }
+            else
+            {
+                foreach (var checkBox in checkBoxPanel.Children.OfType<CheckBox>().ToList())
+                {
+                    if (selectAllCheckBox != checkBox)
+                    {
+                        if ((bool)checkBox.IsChecked)
+                        {
+                            projectNames.Add(checkBox.Content.ToString());
+                        }
+                        else
+                        {
+                            isAnyCheckBoxUnchecked = true;
+                        }
+                    }
+                }
+            }
+
+            if (isAnyCheckBoxUnchecked && ! senderSelectAllCheckBox && (bool)selectAllCheckBox.IsChecked)
+            { 
+                selectAllCheckBox.Unchecked -= CheckBoxClicked;
+                selectAllCheckBox.IsChecked = false;
+                selectAllCheckBox.Unchecked += CheckBoxClicked;
+            }
+
+            if (!(myListView.ItemsSource is List<Item> matchList) || (matchList.Count == 0))
+            {
+                RaiseMatchEvent(0);
+            }
+
+            bool selectAll = false;
+            if ((bool)selectAllCheckBox.IsChecked)
+            {
+                selectAll = true;
+            }
+
+            int count = 0;
+            ICollectionView collectionView = CollectionViewSource.GetDefaultView(myListView.ItemsSource);
+            collectionView.Filter = new Predicate<object>(rowItem  =>
+            {
+                if (selectAll)
+                {
+                    count++;
+                    return true;
+                }
+
+                if (!(rowItem is Item item))
+                {
+                    return false;
+                }
+
+                foreach (var name in projectNames)
+                {
+                    if (item.Project == name)
+                    {
+                        count++;
+                        return true;
+                    }
+                }
+                return false;
+            });
+            RaiseMatchEvent(count);
         }
 
         private void SetListViewSource(List<Item> list, bool showCount = false)
@@ -210,15 +298,10 @@ namespace Textplorer
             if(inputBox.Text.Length < 1)
             {
                 myListView.ItemsSource = emptyList;
-                RaiseMatchEvent(0);
             }
             else
             {
                 myListView.ItemsSource= list;
-                if (showCount)
-                {
-                    RaiseMatchEvent(list.Count);
-                }
             }
         }
 
@@ -286,7 +369,7 @@ namespace Textplorer
 
                         xmlContent = string.Format("<TextBlock xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" TextWrapping=\"Wrap\">{0}</TextBlock>", sb.ToString());
 
-                        Item listItem = new Item(filePaths.Item1, xmlContent, lineNumber, index);
+                        Item listItem = new Item(filePaths.Item1, filePaths.Item2, xmlContent, lineNumber, index);
                         TinyList.Add(listItem);
                     }
                     lineNumber++;
@@ -364,7 +447,7 @@ namespace Textplorer
 
                         xmlContent = string.Format("<TextBlock xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" TextWrapping=\"Wrap\">{0}</TextBlock>", sb.ToString());
 
-                        Item listItem = new Item(filePaths.Item1, xmlContent, lineNumber, index);
+                        Item listItem = new Item(filePaths.Item1, filePaths.Item2, xmlContent, lineNumber, index);
                         list.Add(listItem);
                     }
                     lineNumber++;
@@ -383,14 +466,14 @@ namespace Textplorer
             List<(string,string)> matchList = new List<(string,string)>();
             try
             {
-            foreach (var projectPair in projectList)
-            {
-                // Recursively process projects
-                string projectPath = projectPair.Item2.FileName;
-                string projectName = projectPair.Item2.Name;
-                if (!String.IsNullOrEmpty(projectPath) && (!token.IsCancellationRequested))
+                foreach (var project in projectList)
                 {
-                        SearchInProject(projectPair.Item2, searchText, projectName, matchList,token);
+                    // Recursively process projects
+                    string projectPath = project.FileName;
+                    string projectName = project.Name;
+                    if (!String.IsNullOrEmpty(projectPath) && (!token.IsCancellationRequested))
+                    {
+                        SearchInProject(project, searchText, project.Name, matchList, token);
                     }
                 }
             }
@@ -546,12 +629,14 @@ namespace Textplorer
         {
             public string FullPath { get; set; }
             public string Content { get; set; }
+            public string Project { get; set; }
             public int Line { get; set; }
             public int Position { get; set; }
-            public Item(string FullPath, string Content, int Line, int position)
+            public Item(string FullPath, string Project, string Content, int Line, int position)
             {
                 this.FullPath = FullPath;
                 this.Content = Content;
+                this.Project = Project;
                 this.Line = Line;
                 this.Position = position;
             }
