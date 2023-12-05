@@ -76,16 +76,22 @@ namespace Textplorer
         private void VisibleChangedHandler(object sender, DependencyPropertyChangedEventArgs e)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
+
+            if (!this.IsVisible)
+            {
+                return;
+            }
+                
             List<string> projectNames = GetAllProjectnames(projectList);
             UpdateCheckboxes(projectNames);
 
-            if (this.IsVisible && inputBox.IsKeyboardFocused)
+            if (inputBox.IsKeyboardFocused)
             {
                 EnvDTE.DTE dte = (EnvDTE.DTE)Package.GetGlobalService(typeof(EnvDTE.DTE));
                 IVsTextView textView = GetActiveTextView();
                 string selectedWord;
                 textView.GetSelectedText(out selectedWord);
-                if(!String.IsNullOrEmpty(selectedWord))
+                if (!String.IsNullOrEmpty(selectedWord) && inputBox.Text.ToLower() != selectedWord.ToLower())
                 {
                     inputBox.Text = selectedWord;
                 }
@@ -148,17 +154,56 @@ namespace Textplorer
                 var tinyTask = Task.Run(() => GetAllTinyMatchingItems(tinyList, matchFiles, searchText, token))
                     .ContinueWith(t =>
                     {
-                        Dispatcher.Invoke(() => SetListViewSource(tinyList));
+                        if(tinyList.Count() > 1000) {
+                            Dispatcher.Invoke(() => SetListViewSource(tinyList));
+                        }
                     });
                 
-                List<Item> matchList = new List<Item>();
-                var bigTask = Task.Run(() => GetAllMatchingItems(matchList, matchFiles, searchText, token))
-                    .ContinueWith(t => 
-                    {
-                        Dispatcher.Invoke(() => SetListViewSource(matchList,true));
-                    });
+                List<Item> aList = new List<Item>();
+                List<Item> bList = new List<Item>();
+                List<Item> cList = new List<Item>();
+                List<Item> dList = new List<Item>();
 
-                await Task.WhenAll(tinyTask,bigTask);
+                var firstList = new List<(string,string)>();
+                var secondList = new List<(string,string)>();
+                var thirdList = new List<(string,string)>();
+                var fourthList = new List<(string,string)>();
+
+                int divValue = matchFiles.Count / 4;
+
+                int count = 0;
+                foreach(var file in matchFiles)
+                {
+                    if (count < divValue)
+                    {
+                        firstList.Add(file);
+                    }
+                    else if (count >= divValue && count < (2 * divValue))
+                    {
+                        secondList.Add(file);
+                    }
+                    else if (count >= (2 * divValue) && count < (3 * divValue))
+                    {
+                        thirdList.Add(file);
+                    }
+                    else
+                    {
+                        fourthList.Add(file);
+                    }
+                    count++;
+                }
+
+                var firstTask = Task.Run(() => GetAllMatchingItems(aList, firstList, searchText, token));
+                var secondTask = Task.Run(() => GetAllMatchingItems(bList, secondList, searchText, token));
+                var thirdTask = Task.Run(() => GetAllMatchingItems(cList, thirdList, searchText, token));
+                var fourthTask = Task.Run(() => GetAllMatchingItems(dList, fourthList, searchText, token));
+
+                await Task.WhenAll(tinyTask,firstTask, secondTask,thirdTask,fourthTask);
+
+                var result = aList.Concat(bList).Concat(cList).Concat(dList).ToList();
+
+                SetListViewSource(result);
+
                 FilterListView();
             }
             catch(Exception ex)
@@ -587,7 +632,6 @@ namespace Textplorer
                     EnvDTE.DTE dte = (EnvDTE.DTE)Package.GetGlobalService(typeof(EnvDTE.DTE));
                     // Open the file in the Visual Studio editor
                     var window = dte.ItemOperations.OpenFile(path, EnvDTE.Constants.vsViewKindCode);
-                    window.Activate();
 
                     // Get the text view for the active document
                     IVsTextView textView = GetActiveTextView();
@@ -605,8 +649,9 @@ namespace Textplorer
                         bool found = selection.FindText(searchText);
 
                         textView.CenterLines(line, 1);
-                        window.SetFocus();
                     }
+
+                    myListView.Focus();
                 }
             }
             catch (Exception ex)
