@@ -25,7 +25,14 @@ namespace Textplorer
                     {
                         using (XmlReader xmlReader = XmlReader.Create(stringReader))
                         {
-                            return XamlReader.Load(xmlReader);
+                            try
+                            {
+                                return XamlReader.Load(xmlReader);
+                            }
+                            catch (Exception ex)
+                            {
+                                return null;
+                            }
                         }
                     }
                 }
