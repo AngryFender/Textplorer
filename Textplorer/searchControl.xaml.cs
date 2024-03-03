@@ -30,7 +30,7 @@ namespace Textplorer
         /// Initializes a new instance of the <see cref="searchControl"/> class.
         /// </summary>
         private readonly List<Item> emptyList = new List<Item>();
-        private readonly string[] banList = { ".filters", ".png", ".jpg", ".vsixmanifest",".dll" };
+        private readonly string[] banList = { ".filters", ".png", ".jpg", ".vsixmanifest",".dll", ".ico" };
         private List<Project> projectList = new List<Project>();
         private CancellationTokenSource cts = new CancellationTokenSource();
         public static StringToXamlConverter xamlConverter = new StringToXamlConverter();
