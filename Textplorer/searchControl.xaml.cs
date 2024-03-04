@@ -631,8 +631,15 @@ namespace Textplorer
 
                     EnvDTE.DTE dte = (EnvDTE.DTE)Package.GetGlobalService(typeof(EnvDTE.DTE));
                     // Open the file in the Visual Studio editor
-                    var window = dte.ItemOperations.OpenFile(path, EnvDTE.Constants.vsViewKindCode);
-
+                    EnvDTE.Window window;
+                    if (Path.GetExtension(path) == ".xaml")
+                    {
+                        window = dte.ItemOperations.OpenFile(path, EnvDTE.Constants.vsViewKindDesigner);
+                    }
+                    else
+                    {
+                        window = dte.ItemOperations.OpenFile(path, EnvDTE.Constants.vsViewKindCode);
+                    }
                     // Get the text view for the active document
                     IVsTextView textView = GetActiveTextView();
 
