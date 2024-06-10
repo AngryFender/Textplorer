@@ -302,6 +302,7 @@ namespace Textplorer
             if (!(myListView.ItemsSource is List<Item> matchList) || (matchList.Count == 0))
             {
                 RaiseMatchEvent(0);
+                return;
             }
 
             bool selectAll = false;
